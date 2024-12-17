@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14508705.svg)](https://doi.org/10.5281/zenodo.14508705)
+
 This is a repository containing the raw data for the 2016 paper:  "Dispersal-related traits of the snail _Cornu aspersum_ along an urbanisation gradient: maintenance of mobility across life stages despite high costs" (<https://doi.org/10.1007/s11252-016-0564-y>), as well as a 2024 re-appraisal/re-analysis of these data.
 
 ## A few notes
