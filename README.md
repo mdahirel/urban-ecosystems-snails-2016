@@ -21,13 +21,13 @@ Based on the description of the Methods in the published paper, the `data/dissec
 
 - in some sites, while the overall numbers are consistent, there are more adults and less subadults is `dissection` that there should be based on the other two datasets
 
-**Each dataset is fully consistent with the paper as originally published, the re-analysis further confirms that**, but the complications arise when attempting to match them with each other (especially in the absence of individual marks, see above). From memories and fragmentary notes (including the draft version of the article in my PhD thesis), the best explanation is as far as I can tell is as follows: 
+**Each dataset accurately reflects the work that was done at each step and is consistent with the paper as originally published, the re-analysis further confirms that**, but the complications arise when attempting to match them with each other (especially in the absence of individual marks, see above). From memories and fragmentary notes (including the draft version of the article in my PhD thesis), the best explanation is as far as I can tell is as follows: 
 
 - An original set of 148 snails was collected; these are the ones from the `exploration` dataset, and the ones used in Alice Séguret's Master thesis, which is essentially the draft version of the article included in my PhD thesis
 
 - A small number of snails died between experiments, and some newly captured ones were added. The net balance was 10 snails, leading to the 158 snails in the `dissection` dataset. The clearest support for that is one site that has one snail in `exploration` (chronologically the earliest experiment), but is absent from subsequent datasets.
 
-- Mismatches in stage arise from two sources. First, snails' stages were rescored for each experiment, and there might be some assignment error, especially in snails close to maturity. Second, some snails became adults _during_ the study; many "inconsistencies" between datasets are sites with less subadults in the final `dissection` dataset than the previous ones
+- Mismatches in stage arise from two sources. First, snails' stages were rescored for each experiment, and there might be some assignment error/disagreements, especially in snails close to maturity. Second, some snails became adults _during_ the study; many "inconsistencies" between datasets are sites with less subadults in the final `dissection` dataset than the previous ones
 
 This means that the "total" number of snails (and their average shell size by stage) in the Methods of the published paper refers only to the `dissection` dataset, and may not be an accurate reflection of all the snails were actually used. While I expect the discrepancies to be minor, I nonetheless apologize for that on behalf of all authors.
 
