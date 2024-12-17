@@ -1,0 +1,402 @@
+---
+title: "Reappraisal and re-analysis of Dahirel et al. 2016 Urban Ecosystems data"
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r load-packages}
+library(arm)
+library(car)
+library(FactoMineR)
+library(ggdist)
+library(MuMIn)
+library(ncf)
+library(nlme)
+library(tidyverse)
+library(sf)
+
+library(here)
+
+library(conflicted)
+
+conflict_prefer_all(winner = "dplyr", quiet = TRUE)
+```
+
+# Loading data
+
+```{r load-data}
+site_info <- read_sf(here("data", "site_info.gpkg"))
+
+explo <- read_csv(here("data", "exploration.csv"))
+perception <- read_csv(here("data", "perception.csv"))
+diss <- read_csv(here("data", "dissections.csv"))
+```
+
+The `site_info` file is a geopackage containing the following:
+
+- `SiteID` and `Site_name`: numerical labels and internally-used names for each site. The numerical IDs match are the ones used in Fig. 1 of the published study.
+
+- `PARA_MN10` and `PARA_MN50`: perimeter/area ratio for potential habitats, calculated using Fragstats based on buffers of radius 10m and 50m, respectively
+
+- `PLAND10` and `PLAND50`: proportion of buffer covered by potential habitats in each buffer
+
+- `PMAT10` and `PMAT50`: proportion of artificial matrix within each buffer
+
+- `LPI10` and `LPI50`: size of the largest potential habitat patch with each buffer
+
+See the published article for detailed definitions. In particular, note that `PMAT` + `PLAND` do not sum to 1, justifying the inclusion of both; there are vegetated areas that we do not count as habitats for garden snails (see Fig. 1 in paper).
+
+The `explo` file contains the following:
+
+- `Site_name`: see above
+
+- `Date`: observation date, in dd/mm/yyyy format
+
+- `Stage`: the life stage of the focal snail (a: adult, s: subadult)
+
+- `is.explo`: 0/1 variable, whether the snail explored, i.e. went on the artificial side when leaving the boundary
+
+The `perception` file contains the following:
+
+- `Site_name`, `Date`, `Stage`: see above
+
+- `Distance`: in m, distance between the focal snail and the "stimulus"
+
+- `Hedge`: TRUE/FALSE, whether the "stimulus" the snails were exposed to was the hedge with nettles (TRUE) or the granite sculpture (FALSE)
+
+- `Angle`: the snail response, in degrees between 0 and 180 (ignoring left/right, and to the nearest 5°). 0 is orientation directly towards the stimulus, 180 directly away
+
+The `diss` file contains the following:
+
+- `Site_name`, `Stage`: see above
+
+- `Shell_size`: greater shell diameter, measured with a calliper to the nearest 0.5mm
+
+- `foot_mass`: dry mass of the foot tissues, in g
+
+- `albumen_mass`: dry mass of the albumen gland, the reserve organ providing energy/nutrients when producing the eggs, in g (these were not used in the published paper)
+
+# Creating urbanization metrics
+
+```{r urbanization-metrics}
+PCA10 <- PCA(as_tibble(site_info) |> select(ends_with("10"))) # select the variables in 10m buffer
+PCA50 <- PCA(as_tibble(site_info) |> select(ends_with("50"))) # same in 50m buffer
+
+site_info$PC1_10 <- PCA10$ind$coord[, 1]
+site_info$PC1_50 <- PCA50$ind$coord[, 1]
+```
+
+The two PCAs perfectly match the ones in the original paper, good.
+
+**Important note**: positive values on both PC axes denote *low* levels of urbanization (high proportion of habitat, low levels of urban matrix)
+
+# Analyzing exploration data
+
+Some quick checks of statistics mentioned in the paper:
+
+```{r descriptive-explo}
+table(explo$Stage)
+```
+
+The first step of the analysis itself is to combine snail data with site data:
+
+```{r prep-explo-data}
+data_explo <- left_join(explo, site_info) |>
+  as_tibble() |>
+  mutate(
+    coordX = st_coordinates(geom)[, 1],
+    coordY = st_coordinates(geom)[, 2]
+  ) |>
+  group_by(Stage, Site_name, coordX, coordY, PC1_10, PC1_50) |>
+  summarise(Nemig = sum(is.explo), N = n()) |>
+  ungroup() |>
+  mutate(Nstay = N - Nemig)
+```
+
+We can then run the models:
+
+```{r explo-models}
+mod1 <- glm(cbind(Nemig, Nstay) ~ Stage, data = data_explo, family = binomial)
+mod1_urb10 <- glm(cbind(Nemig, Nstay) ~ (PC1_10) * Stage, data = data_explo, family = binomial)
+mod1_urb50 <- glm(cbind(Nemig, Nstay) ~ (PC1_50) * Stage, data = data_explo, family = binomial)
+```
+
+And compare them using AICc, before exploring their results:
+```{r explo-models-results}
+model.sel(mod1, mod1_urb10, mod1_urb50) # the best model is the 50m one
+
+Anova(mod1_urb50)
+Anova(mod1_urb10)
+Anova(mod1)
+```
+
+We can then check that there is no remaining spatial signal in the residuals of the best model:
+```{r explo-models-spatial-correl}
+plot(spline.correlog(data_explo$coordX, data_explo$coordY, residuals(mod1_urb50)))
+```
+
+## Plotting exploration results
+
+Let's first reconstruct a ggplot version of the paper's Fig 2:
+
+```{r fig2}
+data_explo |>
+  ggplot() +
+  geom_point(
+    aes(PC1_50, Nemig / N, size = N)
+  ) +
+  geom_smooth(
+    aes(x = PC1_50, y = Nemig / N, succ = Nemig, fail = Nstay, Stage = Stage),
+    method = "glm",
+    method.args = list(family = "binomial"),
+    formula = cbind(succ, fail) ~ x
+  ) +
+  scale_y_continuous("Proportion exploring", breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1)) +
+  scale_x_continuous("Urbanization (PC1 of landscape variables in 50m buffer)") +
+  facet_wrap(~Stage) +
+  theme_bw() +
+  theme(legend.position = "none")
+# ignore the warnings, using geom_smooth to get binomial glm plots is always a bit messy
+```
+
+Then, let's look at the question of the differences between subadults and adults across urbanization, which is tackled in the original paper (and code) with messy ad-hoc contrasts. As far as I can tell the original code compared the stages on the response (proportion) scale as opposed to the logit one. Let's do that a bit more efficiently using `arm::sim()` to grab "posterior" estimates for each coefficients:
+
+```{r explo-contrasts}
+set.seed(42)
+coef(sim(mod1_urb50), n.sims = 10000) |>
+  as_tibble() |>
+  expand_grid(x = c(-28:39) / 10) |>
+  mutate(
+    pred_s = plogis(`(Intercept)` + PC1_50 * x + Stages + `PC1_50:Stages` * x),
+    pred_a = plogis(`(Intercept)` + PC1_50 * x)
+  ) |>
+  mutate(contrast = pred_s - pred_a) |>
+  ggplot() +
+  stat_lineribbon(aes(x, contrast), .width = .95, fill = "grey") +
+  geom_hline(yintercept = 0, linetype = 2) +
+  scale_y_continuous("Difference in exploration proportion between stages (subadult - adult)") +
+  scale_x_continuous("Urbanization (PC1 of landscape variables in 50m buffer)") +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+
+# Analysing perceptual ranges
+
+Some quick checks of statistics mentioned in the paper:
+
+```{r descriptive-perception}
+table(perception$Stage)
+table(perception$Distance, perception$Hedge)
+```
+
+We again start by combining snail data with the site info:
+
+```{r prep-perception-data}
+data_perception <- left_join(perception, site_info) |>
+  as_tibble() |>
+  mutate(
+    coordX = st_coordinates(geom)[, 1],
+    coordY = st_coordinates(geom)[, 2]
+  ) |>
+  mutate(Angle_rescaled = (180 - Angle) / 180)
+```
+
+We then re-run the original models:
+
+```{r models-perception}
+mod2_urb50 <- lm(Angle_rescaled ~ (PC1_50 + Stage) * (Hedge + Distance) + Hedge:Distance, data = data_perception)
+mod2_urb10 <- lm(Angle_rescaled ~ (PC1_10 + Stage) * (Hedge + Distance) + Hedge:Distance, data = data_perception)
+mod2 <- lm(Angle_rescaled ~ (Stage) * (Hedge + Distance) + Hedge:Distance, data = data_perception)
+```
+
+Before checking them:
+```{r perception-models-results}
+model.sel(mod2, mod2_urb10, mod2_urb50)
+
+Anova(mod2)
+Anova(mod2_urb10)
+Anova(mod2_urb50)
+```
+
+```{r perception-spatial-autocorr}
+plot(spline.correlog(data_perception$coordX, data_perception$coordY, residuals(mod2)))
+```
+
+## Plotting perceptual range results
+
+Fletcher et al. 2013 (https://doi.org/10.1007/s10980-012-9812-6) tell us how to extract detectability and response bias components from the above models. We need to be thoughtful since we included covariates, but we can just again use `arm::sim()` to obtain "posterior" samples for each coefficients and combine them appropriately:
+
+```{r prop-subadults}
+prop_s <- table(perception$Stage)["s"] / length(perception$Stage)
+
+# about 56% of the snails in this dataset are subadults
+```
+
+
+```{r fig4}
+coef(sim(mod2)) |>
+  as_tibble() |>
+  expand_grid(x = c(0:50) / 10) |>
+  mutate(
+    Detectability = (`Stages:HedgeTRUE` * prop_s + HedgeTRUE) + `HedgeTRUE:Distance` * x,
+    Response_bias = -(`(Intercept)` + Stages * prop_s + (Distance + `Stages:Distance` * prop_s) * x)
+    # we include stage effects weighted by the proportion of subadults in dataset to get at the average stage value
+    # but see "A note and update" below
+  ) |>
+  dplyr::select(x, Detectability, Response_bias) |>
+  pivot_longer(cols = c(-x)) |>
+  ggplot() +
+  stat_lineribbon(aes(x, value), .width = 0.95, fill = "grey") +
+  geom_hline(yintercept = 0, linetype = 2) +
+  facet_grid(~name) +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+
+## A note and update on perceptual range models
+
+For some reason, our original models did not include interactions between (Stage or Urbanisation) and the Hedge:Distance interaction. It might have been for a very good reason, we might have though this would make a too big model. (after all, this is definitely why we did not run stage * urbanisation interactions).
+But with the benefit of hindsight and better statistical expertise, it is clear from the formulas in Fletcher et al 2013 that this could alter our conclusions on detectability in response to urbanisation. Our published models assume stage and urbanisation affect the baseline detectability, but not its rate of decay with distance. So let's re-run this:
+
+```{r new-perception-models}
+mod2bis_urb50 <- lm(Angle_rescaled ~ (PC1_50 + Stage) * (Hedge * Distance), data = data_perception)
+mod2bis_urb10 <- lm(Angle_rescaled ~ (PC1_10 + Stage) * (Hedge * Distance), data = data_perception)
+mod2bis <- lm(Angle_rescaled ~ (Stage) * (Hedge * Distance), data = data_perception)
+```
+
+
+```{r check-new-perception-models}
+model.sel(mod2bis, mod2bis_urb10, mod2bis_urb50)
+model.sel(mod2, mod2_urb10, mod2_urb50, mod2bis, mod2bis_urb10, mod2bis_urb50)
+
+Anova(mod2bis)
+Anova(mod2bis_urb10)
+Anova(mod2bis_urb50)
+```
+
+The good news is that there are still no evidence of support for an urbanisation effect on detectability, BUT there might be a stage effect on detectability that wasn't apparent in original models.
+
+Let's redo the plots, this time split by stage
+
+```{r fig4-by-stage}
+coef(sim(mod2bis)) |>
+  as_tibble() |>
+  expand_grid(x = c(0:50) / 10) |>
+  mutate(
+    Detectability_subadult = (`Stages:HedgeTRUE` + HedgeTRUE) + (`HedgeTRUE:Distance` + `Stages:HedgeTRUE:Distance`) * x,
+    Response_bias_subadult = -(`(Intercept)` + Stages + (Distance + `Stages:Distance`) * x),
+    Detectability_adult = (HedgeTRUE) + (`HedgeTRUE:Distance`) * x,
+    Response_bias_adult = -(`(Intercept)` + (Distance) * x)
+  ) |>
+  dplyr::select(x, Detectability_adult, Response_bias_adult, Detectability_subadult, Response_bias_subadult) |>
+  pivot_longer(cols = c(-x)) |>
+  mutate(
+    variable = case_when(
+      str_detect(name, "Detectability") ~ "Detectability",
+      TRUE ~ "Response_bias"
+    ),
+    Stage = case_when(
+      str_detect(name, "subadult") ~ "subadult",
+      TRUE ~ "adult"
+    )
+  ) |>
+  ggplot() +
+  stat_lineribbon(aes(x, value), .width = 0.95, fill = "grey") +
+  geom_hline(yintercept = 0, linetype = 2) +
+  facet_grid(~ variable + Stage) +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+The updated models suggest actually a stronger detectability reaction of adults to the stimulus, which is interesting in several ways:
+- could there be a potential developmental effect, where snails' sensory capacity become better as they mature?
+- alternately, the "response stronger in adults" pattern in detectability matches what we see in exploration. Is there a link? Something possibly to revisit in future studies...
+
+(we still need to keep in mind that this is a limited dataset)
+
+# Analysing dissection data
+
+```{r descriptive-dissection}
+table(diss$Stage)
+```
+
+We again start by combing snail and site data:
+```{r prep-dissection data}
+data_diss <- left_join(diss, site_info) |>
+  as_tibble() |>
+  mutate(
+    coordX = st_coordinates(geom)[, 1],
+    coordY = st_coordinates(geom)[, 2]
+  )
+```
+
+Before running the models:
+```{r dissection-models}
+mod3_urb50 <- gnls(1000 * foot_mass ~ (a * PC1_50 + c) * Shell_size^(d * PC1_50 + f),
+  data = data_diss[, c("foot_mass", "PC1_50", "PC1_10", "Shell_size")],
+  start = c(a = 0.0002, c = 0.0002, d = 0.0002, f = 2.95),
+  weights = varPower()
+)
+
+mod3_urb10 <- gnls(1000 * foot_mass ~ (a * PC1_10 + c) * Shell_size^(d * PC1_10 + f),
+  data = data_diss[, c("foot_mass", "PC1_50", "PC1_10", "Shell_size")],
+  start = c(a = 0.0002, c = 0.0002, d = 0.0002, f = 2.95),
+  weights = varPower()
+)
+
+mod3 <- gnls(1000 * foot_mass ~ (c) * Shell_size^(f),
+  data = data_diss[, c("foot_mass", "PC1_50", "PC1_10", "Shell_size")],
+  start = c(c = 0.0002, f = 2.95),
+  weights = varPower()
+)
+```
+
+A couple notes on these models, with the benefit of hindsight:
+
+- The choice to use gaussian non-linear models as opposed to log-log models, and to use heteroskedastic errors, stems from the Packard reference cited in the paper (https://doi.org/10.1002/jez.b.22570). It is a defendable choice, but others are also valid. Doing the analysis from scratch today, I would probably still use non-linear models, but using a non-Gaussian distribution (lognormal, Gamma,...) to account for both the heteroskedasticity and the strictly positive nature of these data
+
+- rather than encoding the linear submodels with stage and urbanisation effects on the coefficients "manually", we could have made use of the params argument in gnls()
+
+```{r AICc-diss}
+AICc(mod3)
+AICc(mod3_urb10)
+AICc(mod3_urb50)
+# model.sel() gives errors with the gnls models, maybe due to the varPowers?
+```
+
+
+```{r diss-model-summary}
+(summary(mod3_urb10)$tTable) # the best model
+```
+
+```{r dissection-spatial-autocorr}
+plot(spline.correlog(data_diss$coordX, data_diss$coordY, residuals(mod3_urb10)))
+```
+
+## Plotting dissection results
+
+There are no `sim()` method useable for `gnls()` models, so let's do the "posterior" sampling manually. We need the variance-covariance matrix of the coefficients to do that properly, otherwise we would wrongly assume they are independent
+
+```{r fig3}
+coefs_sim <- MASS::mvrnorm(n = 1000, mu = mod3_urb10$coefficients, Sigma = mod3_urb10$varBeta) |>
+  as_tibble() |>
+  expand_grid(urb = c(-36:29) / 10) |>
+  mutate(
+    alpha = a * urb + c,
+    beta = d * urb + f
+  ) |>
+  select(urb, alpha, beta)
+
+ggplot(coefs_sim) +
+  stat_lineribbon(aes(urb, alpha), .width = 0.95, fill = "grey") +
+  theme_bw()
+
+ggplot(coefs_sim) +
+  stat_lineribbon(aes(urb, beta), .width = 0.95, fill = "grey") +
+  theme_bw()
+```
+
+The plot for alpha is slightly different from the one in the publication (probably I ignored the variance-covariance matrix I just mentioned in the original code), but the interpretation is the same: no effect of urbanization, despite the best model including an urbanisation parameter
