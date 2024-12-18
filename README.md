@@ -25,7 +25,7 @@ Based on the description of the Methods in the published paper, the `data/dissec
 
 **Each dataset accurately reflects the work that was done at each step and is consistent with the paper as originally published, the re-analysis further confirms that**, but the complications arise when attempting to match them with each other (especially in the absence of individual marks, see above). From memories and fragmentary notes (including the draft version of the article in my PhD thesis), the best explanation is as far as I can tell is as follows: 
 
-- An original set of 148 snails was collected; these are the ones from the `exploration` dataset, and the ones used in Alice Séguret's Master thesis, which is essentially the draft version of the article included in my PhD thesis
+- An original set of 148 snails was collected; these are the ones from the `exploration` dataset, as seen in the corresponding draft chapter included in my PhD thesis (https://theses.fr/2014REN1S068), which is directly derived from co-first author Alice Séguret's Master thesis
 
 - A small number of snails died between experiments, and some newly captured ones were added. The net balance was 10 snails, leading to the 158 snails in the `dissection` dataset. The clearest support for that is one site that has one snail in `exploration` (chronologically the earliest experiment), but is absent from subsequent datasets.
 
